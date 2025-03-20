@@ -27,13 +27,16 @@ export default function EditProductPage() {
 
   // رابط الصورة القديم
   const [oldImageURL, setOldImageURL] = useState('');
-
   // ملف الصورة الجديد (إن اختاره المستخدم)
   const [imageFile, setImageFile] = useState<File | null>(null);
 
   // الأصناف
   const [categories, setCategories] = useState<Array<{ id: string; name: string }>>([]);
   const [selectedCategoryId, setSelectedCategoryId] = useState<string>(''); // الصنف المختار
+
+  // الماركات
+  const [brands, setBrands] = useState<Array<{ id: string; name: string }>>([]);
+  const [selectedBrandId, setSelectedBrandId] = useState<string>(''); // الماركة المختارة
 
   const [loading, setLoading] = useState(true);
 
@@ -57,6 +60,7 @@ export default function EditProductPage() {
           setSizes(productData.sizes || []);
           setOldImageURL(productData.imageURL || '');
           setSelectedCategoryId(productData.categoryId || '');
+          setSelectedBrandId(productData.brandId || '');
         } else {
           alert('المنتج غير موجود!');
           router.push('/products');
@@ -88,6 +92,24 @@ export default function EditProductPage() {
     };
 
     fetchCategories();
+  }, []);
+
+  // جلب الماركات
+  useEffect(() => {
+    const fetchBrands = async () => {
+      try {
+        const snap = await getDocs(collection(db, 'brands'));
+        const fetchedBrands = snap.docs.map((d) => ({
+          id: d.id,
+          name: d.data().name || '',
+        }));
+        setBrands(fetchedBrands);
+      } catch (error) {
+        console.error('خطأ في جلب الماركات:', error);
+      }
+    };
+
+    fetchBrands();
   }, []);
 
   // إضافة حجم جديد
@@ -131,7 +153,7 @@ export default function EditProductPage() {
         newImageURL = await getDownloadURL(storageRef);
       }
 
-      // تحديث المستند في Firestore
+      // تحديث المستند في Firestore مع تمرير معرّف الصنف والماركة
       await updateDoc(docRef, {
         name,
         price,
@@ -139,6 +161,7 @@ export default function EditProductPage() {
         sizes, // مصفوفة [{ name, price }, ...]
         imageURL: newImageURL,
         categoryId: selectedCategoryId,
+        brandId: selectedBrandId,
       });
 
       router.push('/products'); // العودة لقائمة المنتجات
@@ -268,9 +291,26 @@ export default function EditProductPage() {
                 </option>
               ))}
             </select>
-            <p className="text-sm text-gray-500 mt-1">
-              الأصناف من قاعدة البيانات.
-            </p>
+            <p className="text-sm text-gray-500 mt-1">الأصناف من قاعدة البيانات.</p>
+          </div>
+
+          {/* اختيار الماركة */}
+          <div>
+            <label className="block mb-1 text-gray-700">اختر الماركة:</label>
+            <select
+              className="border w-full px-3 py-2 rounded focus:outline-none focus:ring-1 focus:ring-blue-400"
+              value={selectedBrandId}
+              onChange={(e) => setSelectedBrandId(e.target.value)}
+              required
+            >
+              <option value="">اختر الماركة</option>
+              {brands.map((brand) => (
+                <option key={brand.id} value={brand.id}>
+                  {brand.name}
+                </option>
+              ))}
+            </select>
+            <p className="text-sm text-gray-500 mt-1">الماركات من قاعدة البيانات.</p>
           </div>
 
           {/* الصورة القديمة + اختيار صورة جديدة */}

@@ -1,48 +1,56 @@
 "use client";
 
-import { useState, useEffect, FormEvent } from 'react';
-import { useRouter, useParams } from 'next/navigation';
-import { doc, getDoc, updateDoc } from 'firebase/firestore';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { db, storage } from '../../../services/firebase';
-import ProtectedRoute from '../../../components/ProtectedRoute';
+import { useState, useEffect, FormEvent } from "react";
+import { useRouter, useParams } from "next/navigation";
+import {
+  doc,
+  getDoc,
+  setDoc,
+  deleteDoc,
+  updateDoc,
+} from "firebase/firestore";
+import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
+import { db, storage } from "../../../services/firebase";
+import ProtectedRoute from "../../../components/ProtectedRoute";
 
 export default function EditCategoryPage() {
-  const [name, setName] = useState('');
-  const [oldImageUrl, setOldImageUrl] = useState(''); // رابط الصورة القديمة من Firestore
-  const [imageFile, setImageFile] = useState<File | null>(null); // الملف الجديد
+  const [name, setName] = useState("");
+  const [oldImageUrl, setOldImageUrl] = useState("");
+  const [imageFile, setImageFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(true);
 
   const router = useRouter();
   const params = useParams();
-  const { id } = params as { id: string };
+  // نفترض أن معرّف المستند (القديم) = اسم الصنف القديم
+  const { id: oldName } = params as { id: string };
 
   useEffect(() => {
     const fetchCategory = async () => {
       try {
-        const docRef = doc(db, 'categories', id);
+        // جلب المستند القديم
+        const docRef = doc(db, "categories", oldName);
         const docSnap = await getDoc(docRef);
 
         if (docSnap.exists()) {
           const categoryData = docSnap.data();
-          setName(categoryData.name || '');
-          setOldImageUrl(categoryData.imageUrl || '');
+          setName(categoryData.name || oldName);
+          setOldImageUrl(categoryData.imageUrl || "");
         } else {
-          alert('الصنف غير موجود!');
-          router.push('/categories');
+          alert("الصنف غير موجود!");
+          router.push("/categories");
         }
       } catch (error) {
-        console.error('خطأ في جلب الصنف:', error);
-        alert('حدث خطأ أثناء جلب الصنف.');
+        console.error("خطأ في جلب الصنف:", error);
+        alert("حدث خطأ أثناء جلب الصنف.");
       } finally {
         setLoading(false);
       }
     };
 
     fetchCategory();
-  }, [id, router]);
+  }, [oldName, router]);
 
-  // دالة لاختيار الملف من input
+  // اختيار ملف الصورة الجديد
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       setImageFile(e.target.files[0]);
@@ -54,28 +62,71 @@ export default function EditCategoryPage() {
     setLoading(true);
 
     try {
-      const docRef = doc(db, 'categories', id);
-
-      // إذا اختار المستخدم ملفًا جديدًا، ارفعه واحصل على رابط التحميل
-      let newImageUrl = oldImageUrl; // الافتراضي هو الرابط القديم
-      if (imageFile) {
-        const storageRef = ref(storage, `categories/${Date.now()}_${imageFile.name}`);
-        await uploadBytes(storageRef, imageFile);
-        newImageUrl = await getDownloadURL(storageRef);
+      const newName = name.trim();
+      // إذا المستخدم لم يغيّر الاسم
+      if (newName === oldName) {
+        await updateSameDoc(); // تحديث عادي على نفس المستند
+      } else {
+        await renameDoc(); // إنشاء مستند جديد وحذف القديم
       }
 
-      // حدّث المستند في Firestore
-      await updateDoc(docRef, {
-        name,
-        imageUrl: newImageUrl, // استخدم الرابط الجديد إن وجد، وإلا القديم
-      });
-      router.push('/categories');
+      alert("تم تحديث الصنف بنجاح!");
+      router.push("/categories");
     } catch (error) {
-      console.error('خطأ في تحديث الصنف:', error);
-      alert('حدث خطأ أثناء تحديث الصنف.');
+      console.error("خطأ في تحديث الصنف:", error);
+      alert("حدث خطأ أثناء تحديث الصنف.");
     } finally {
       setLoading(false);
     }
+  };
+
+  // تحديث عادي على نفس المستند (في حالة الاسم لم يتغير)
+  const updateSameDoc = async () => {
+    const docRef = doc(db, "categories", oldName);
+
+    // إذا اختار المستخدم ملفًا جديدًا، ارفعه
+    let newImageUrl = oldImageUrl;
+    if (imageFile) {
+      const storageRef = ref(
+        storage,
+        `categories/${Date.now()}_${imageFile.name}`
+      );
+      await uploadBytes(storageRef, imageFile);
+      newImageUrl = await getDownloadURL(storageRef);
+    }
+
+    // حدّث المستند نفسه
+    await updateDoc(docRef, {
+      name: name.trim(),
+      imageUrl: newImageUrl,
+    });
+  };
+
+  // إذا تغيّر الاسم -> ننشئ مستند جديد بمعرّف = newName وننسخ البيانات ثم نحذف القديم
+  const renameDoc = async () => {
+    const newName = name.trim();
+
+    // ارفع الصورة إن وجدت
+    let newImageUrl = oldImageUrl;
+    if (imageFile) {
+      const storageRef = ref(
+        storage,
+        `categories/${Date.now()}_${imageFile.name}`
+      );
+      await uploadBytes(storageRef, imageFile);
+      newImageUrl = await getDownloadURL(storageRef);
+    }
+
+    // 1) أنشئ مستند جديد بالاسم الجديد
+    const newDocRef = doc(db, "categories", newName);
+    await setDoc(newDocRef, {
+      name: newName,
+      imageUrl: newImageUrl,
+    });
+
+    // 2) احذف المستند القديم
+    const oldDocRef = doc(db, "categories", oldName);
+    await deleteDoc(oldDocRef);
   };
 
   if (loading) {
@@ -107,14 +158,20 @@ export default function EditCategoryPage() {
           <div>
             <label className="block mb-1 text-gray-700">الصورة الحالية:</label>
             {oldImageUrl ? (
-              <img src={oldImageUrl} alt="Category" className="w-32 h-32 object-cover mb-2" />
+              <img
+                src={oldImageUrl}
+                alt="Category"
+                className="w-32 h-32 object-cover mb-2"
+              />
             ) : (
               <p className="text-sm text-gray-500 mb-2">لا توجد صورة قديمة.</p>
             )}
           </div>
 
           <div>
-            <label className="block mb-1 text-gray-700">اختر صورة جديدة (اختياري):</label>
+            <label className="block mb-1 text-gray-700">
+              اختر صورة جديدة (اختياري):
+            </label>
             <input
               type="file"
               accept="image/*"
@@ -135,7 +192,7 @@ export default function EditCategoryPage() {
             disabled={loading}
             className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition-colors"
           >
-            {loading ? 'جاري التحديث...' : 'تحديث الصنف'}
+            {loading ? "جاري التحديث..." : "تحديث الصنف"}
           </button>
         </form>
       </div>

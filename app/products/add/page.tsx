@@ -13,6 +13,12 @@ interface CategoryData {
   imageUrl?: string;
 }
 
+interface BrandData {
+  id: string;
+  name: string;
+  imageUrl?: string;
+}
+
 // نوع لكل حجم
 interface SizeOption {
   name: string;   // اسم الحجم
@@ -20,7 +26,7 @@ interface SizeOption {
 }
 
 export default function AddProductPage() {
-  // الحقول الرئيسية
+  // الحقول الرئيسية للمنتج
   const [name, setName] = useState('');
   const [price, setPrice] = useState<number>(0);
   const [discount, setDiscount] = useState<number>(0);
@@ -38,6 +44,10 @@ export default function AddProductPage() {
   // الأصناف
   const [categories, setCategories] = useState<CategoryData[]>([]);
   const [selectedCategoryId, setSelectedCategoryId] = useState<string>(''); // الصنف المختار
+
+  // الماركات
+  const [brands, setBrands] = useState<BrandData[]>([]);
+  const [selectedBrandId, setSelectedBrandId] = useState<string>(''); // الماركة المختارة
 
   const [loading, setLoading] = useState(false);
   const router = useRouter();
@@ -59,6 +69,25 @@ export default function AddProductPage() {
     };
 
     fetchCategories();
+  }, []);
+
+  // جلب الماركات من Firestore
+  useEffect(() => {
+    const fetchBrands = async () => {
+      try {
+        const snap = await getDocs(collection(db, 'brands'));
+        const fetchedBrands: BrandData[] = snap.docs.map((doc) => ({
+          id: doc.id,
+          name: doc.data().name || '',
+          imageUrl: doc.data().imageUrl || '',
+        }));
+        setBrands(fetchedBrands);
+      } catch (error) {
+        console.error('خطأ في جلب الماركات:', error);
+      }
+    };
+
+    fetchBrands();
   }, []);
 
   // إضافة حجم جديد إلى المصفوفة
@@ -106,15 +135,16 @@ export default function AddProductPage() {
         downloadURL = await getDownloadURL(storageRef);
       }
 
-      // إضافة المستند إلى Firestore
+      // إضافة المستند إلى Firestore مع ربطه بالصنف والماركة المختارين
       await addDoc(collection(db, 'products'), {
         name,
         price,
         discount,
         discountedPrice,
-        sizes,               // هنا نخزن الأحجام ككائنات [{name, price}, ...]
+        sizes,               // تخزين الأحجام ككائنات [{name, price}, ...]
         imageURL: downloadURL,
         categoryId: selectedCategoryId,
+        brandId: selectedBrandId,
       });
 
       // العودة لقائمة المنتجات
@@ -238,6 +268,27 @@ export default function AddProductPage() {
             </select>
             <p className="text-sm text-gray-500 mt-1">
               تم جلب هذه الأصناف من قاعدة البيانات.
+            </p>
+          </div>
+
+          {/* اختيار الماركة */}
+          <div>
+            <label className="block mb-1 text-gray-700">اختر الماركة:</label>
+            <select
+              className="border w-full px-3 py-2 rounded focus:outline-none focus:ring-1 focus:ring-blue-400"
+              value={selectedBrandId}
+              onChange={(e) => setSelectedBrandId(e.target.value)}
+              required
+            >
+              <option value="">اختر الماركة</option>
+              {brands.map((brand) => (
+                <option key={brand.id} value={brand.id}>
+                  {brand.name}
+                </option>
+              ))}
+            </select>
+            <p className="text-sm text-gray-500 mt-1">
+              تم جلب هذه الماركات من قاعدة البيانات.
             </p>
           </div>
 
